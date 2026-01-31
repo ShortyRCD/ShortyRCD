@@ -172,6 +172,14 @@ function ShortyRCD:OnSpellcastChannelStart(unit, castGUID, spellID)
   end
 end
 
+-- Encounter end: clear any timers flagged as reset-on-encounter-end (roe == true).
+function ShortyRCD:OnEncounterEnd(encounterID, encounterName, difficultyID, groupSize, success)
+  if self.Tracker and self.Tracker.OnEncounterEnd then
+    self.Tracker:OnEncounterEnd(encounterID, encounterName, difficultyID, groupSize, success)
+  end
+end
+
+
 function ShortyRCD:RegisterEvents()
   if not EventRegistry then
     self:Print("EventRegistry unavailable; events disabled")
@@ -194,6 +202,13 @@ function ShortyRCD:RegisterEvents()
   EventRegistry:RegisterCallback("UNIT_SPELLCAST_CHANNEL_START", function(_, ...)
     ShortyRCD:OnSpellcastChannelStart(...)
   end, self)
+
+  -- Reset-on-encounter-end cooldowns (roe=true in ClassLib).
+  EventRegistry:RegisterFrameEvent("ENCOUNTER_END")
+  EventRegistry:RegisterCallback("ENCOUNTER_END", function(_, ...)
+    ShortyRCD:OnEncounterEnd(...)
+  end, self)
+
 end
 
 -- ---------- Bootstrap ----------

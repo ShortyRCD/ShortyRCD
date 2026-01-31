@@ -80,13 +80,15 @@ function ShortyRCD.Comms:OnAddonMessage(prefix, msg, channel, sender)
     return
   end
 
-  -- Phase 1 print verification (keep for now)
-  ShortyRCD:Print(("RX %s cast %s (%d)"):format(tostring(sender), entry.name or "?", spellID))
+  -- Phase 2: update tracker state
+  if ShortyRCD.Tracker and ShortyRCD.Tracker.OnRemoteCast then
+    ShortyRCD.Tracker:OnRemoteCast(sender, spellID)
+  end
 
-  -- Phase 2 hook (we’ll wire this next)
-  -- if ShortyRCD.Tracker and ShortyRCD.Tracker.OnRemoteCast then
-  --   ShortyRCD.Tracker:OnRemoteCast(sender, spellID)
-  -- end
+  -- Keep a receive print for development, but only when debug is enabled.
+  if ShortyRCDDB and ShortyRCDDB.debug then
+    ShortyRCD:Print(("RX %s cast %s (%d)"):format(tostring(sender), entry.name or "?", spellID))
+  end
 end
 
 -- Dev helper: simulate receiving a cast message locally without needing a second client.
