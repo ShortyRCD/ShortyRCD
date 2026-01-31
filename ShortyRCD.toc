@@ -5,4 +5,9 @@
 ## Version: 0.1.0
 ## SavedVariables: ShortyRCDDB
 
+class_library.lua
+tracker.lua
+comms.lua
+ui.lua
+options.lua
 ShortyRCD.lua
