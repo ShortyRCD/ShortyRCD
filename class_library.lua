@@ -1,0 +1,109 @@
+-- class_library.lua
+-- ShortyRCD raid cooldown catalog (Midnight).
+-- This file is the ONLY place we maintain the spell list.
+
+ShortyRCD = ShortyRCD or {}
+
+ShortyRCD.ClassDisplay = {
+  DEATHKNIGHT = "Death Knight",
+  DEMONHUNTER = "Demon Hunter",
+  DRUID       = "Druid",
+  EVOKER      = "Evoker",
+  HUNTER      = "Hunter",
+  MAGE        = "Mage",
+  MONK        = "Monk",
+  PALADIN     = "Paladin",
+  PRIEST      = "Priest",
+  ROGUE       = "Rogue",
+  SHAMAN      = "Shaman",
+  WARLOCK     = "Warlock",
+  WARRIOR     = "Warrior",
+}
+
+ShortyRCD.ClassOrder = {
+  "DEATHKNIGHT","DEMONHUNTER","DRUID","EVOKER","HUNTER","MAGE","MONK",
+  "PALADIN","PRIEST","ROGUE","SHAMAN","WARLOCK","WARRIOR"
+}
+
+-- Spell entry format:
+-- { spellID = 123, name = "Spell", iconID = 456, cd = 120, type = "DEFENSIVE" }
+
+ShortyRCD.ClassLib = {
+
+  DEATHKNIGHT = {
+    { name = "Anti-Magic Zone", spellID = 51052,  iconID = 237510,  cd = 240, type = "DEFENSIVE" },
+  },
+
+  DEMONHUNTER = {
+    { name = "Darkness",        spellID = 196718, iconID = 1305154, cd = 300, type = "DEFENSIVE" },
+  },
+
+  DRUID = {
+    { name = "Tranquility",               spellID = 740,    iconID = 136107, cd = 180, type = "HEALING"   },
+    { name = "Incarnation: Tree of Life", spellID = 33891,  iconID = 236157, cd = 180, type = "HEALING"   },
+    { name = "Ironbark",                  spellID = 102342, iconID = 572025, cd = 90,  type = "DEFENSIVE" },
+    { name = "Stampeding Roar",           spellID = 77761,  iconID = 463283, cd = 120, type = "UTILITY"   },
+    { name = "Innervate",                 spellID = 29166,  iconID = 136048, cd = 180, type = "UTILITY"   },
+    { name = "Ursol's Vortex",            spellID = 102793, iconID = 571588, cd = 60,  type = "UTILITY"   },
+  },
+
+  EVOKER = {
+    { name = "Zephyr",        spellID = 374227, iconID = 4630449, cd = 120, type = "UTILITY"   },
+    { name = "Rewind",        spellID = 363534, iconID = 4622474, cd = 240, type = "HEALING"   },
+    { name = "Dream Flight",  spellID = 359816, iconID = 4622455, cd = 120, type = "HEALING"   },
+    { name = "Time Spiral",   spellID = 374968, iconID = 4622479, cd = 120, type = "UTILITY"   },
+    { name = "Time Dilation", spellID = 357170, iconID = 4622478, cd = 60,  type = "DEFENSIVE" },
+  },
+
+  HUNTER = {
+    -- No raid CDs in your current Midnight list (keep empty on purpose)
+  },
+
+  MAGE = {
+    -- No raid CDs in your current Midnight list (keep empty on purpose)
+  },
+
+  MONK = {
+    { name = "Revival",        spellID = 115310, iconID = 1020466, cd = 180, type = "HEALING" },
+    { name = "Life Cocoon",    spellID = 116849, iconID = 627485,  cd = 120, type = "HEALING" },
+    { name = "Ring of Peace",  spellID = 116844, iconID = 839107,  cd = 120, type = "UTILITY" },
+  },
+
+  PALADIN = {
+    { name = "Aura Mastery",           spellID = 31821, iconID = 135872, cd = 180, type = "DEFENSIVE" },
+    { name = "Blessing of Protection", spellID = 1022,  iconID = 135964, cd = 300, type = "DEFENSIVE" },
+    { name = "Blessing of Sacrifice",  spellID = 6940,  iconID = 135966, cd = 120, type = "DEFENSIVE" },
+    { name = "Blessing of Freedom",    spellID = 1044,  iconID = 135968, cd = 25,  type = "UTILITY"   },
+  },
+
+  PRIEST = {
+    { name = "Power Infusion",       spellID = 10060, iconID = 135939, cd = 120, type = "UTILITY"   },
+    { name = "Power Word: Barrier",  spellID = 62618, iconID = 253400, cd = 180, type = "DEFENSIVE" },
+    { name = "Divine Hymn",          spellID = 64843, iconID = 237540, cd = 180, type = "HEALING"   },
+    { name = "Symbol of Hope",       spellID = 64901, iconID = 135982, cd = 180, type = "UTILITY"   },
+    { name = "Guardian Spirit",      spellID = 47788, iconID = 237542, cd = 180, type = "DEFENSIVE" },
+  },
+
+  ROGUE = {
+    -- No raid CDs in your current Midnight list (keep empty on purpose)
+  },
+
+  SHAMAN = {
+    { name = "Spirit Link Totem",        spellID = 98008,  iconID = 237586, cd = 180, type = "HEALING" },
+    { name = "Healing Tide Totem",       spellID = 108280, iconID = 538569, cd = 180, type = "HEALING" },
+    { name = "Wind Rush Totem",          spellID = 192077, iconID = 538576, cd = 120, type = "UTILITY" },
+    { name = "Earthbind Totem",          spellID = 2484,   iconID = 136102, cd = 30,  type = "UTILITY" },
+    { name = "Earthgrab Totem",          spellID = 51485,  iconID = 136100, cd = 30,  type = "UTILITY" },
+    { name = "Tremor Totem",             spellID = 8143,   iconID = 136108, cd = 60,  type = "UTILITY" },
+    { name = "Poison Cleansing Totem",   spellID = 383013, iconID = 136070, cd = 120, type = "UTILITY" },
+    { name = "Capacitor Totem",          spellID = 192058, iconID = 136013, cd = 60,  type = "UTILITY" },
+  },
+
+  WARLOCK = {
+    -- No raid CDs in your current Midnight list (keep empty on purpose)
+  },
+
+  WARRIOR = {
+    { name = "Rallying Cry", spellID = 97462, iconID = 132351, cd = 180, type = "DEFENSIVE" },
+  },
+}
