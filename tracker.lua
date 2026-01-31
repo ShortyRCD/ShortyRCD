@@ -1,142 +1,112 @@
 -- tracker.lua
--- Stores per-sender cooldown state. ClassLib provides cd/ac/icon/name.
-
 ShortyRCD = ShortyRCD or {}
 ShortyRCD.Tracker = ShortyRCD.Tracker or {}
 
--- timers[sender][spellID] = { startedAt=<time>, cd=<sec>, ac=<sec> }
+local Tracker = ShortyRCD.Tracker
 
-function ShortyRCD.Tracker:Init()
-  self.timers = self.timers or {}
-end
-
-local function Now()
-  return (GetTime and GetTime()) or 0
-end
-
-local function EnsureSender(timers, sender)
-  local t = timers[sender]
-  if not t then
-    t = {}
-    timers[sender] = t
+local function ShortName(nameWithRealm)
+  if type(nameWithRealm) ~= "string" then return nameWithRealm end
+  -- Prefer Ambiguate if available (handles Name-Realm)
+  if Ambiguate then
+    return Ambiguate(nameWithRealm, "short")
   end
-  return t
+  return (nameWithRealm:gsub("%-.*$", ""))
 end
 
--- Called for both true comms and dev injection.
-function ShortyRCD.Tracker:OnRemoteCast(sender, spellID)
-  if not sender or sender == "" then return end
-  if type(spellID) ~= "number" then return end
+function Tracker:Init()
+  -- state[name][spellID] = { startedAt=, cd=, ac=, iconID=, name=, type=, roe= }
+  self.state = self.state or {}
+end
 
-  local entry = (ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID)) or nil
+function Tracker:OnRemoteCast(sender, spellID)
+  sender = ShortName(sender)
+  spellID = tonumber(spellID)
+  if not sender or not spellID then return end
+
+  local entry = ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID) or nil
   if not entry then return end
 
-  local startedAt = Now()
-  local cd = tonumber(entry.cd) or 0
-  local ac = tonumber(entry.ac) or 0
-
-  local st = EnsureSender(self.timers, sender)
-  st[spellID] = {
-    startedAt = startedAt,
-    cd = cd,
-    ac = ac,
+  self.state[sender] = self.state[sender] or {}
+  self.state[sender][spellID] = {
+    startedAt = GetTime(),
+    cd = tonumber(entry.cd) or 0,
+    ac = tonumber(entry.ac) or 0,
+    iconID = entry.iconID,
+    spellName = entry.name or ("Spell " .. tostring(spellID)),
+    type = entry.type,
+    roe = (entry.roe == true),
   }
 end
 
-
--- Clears cooldowns that reset on encounter end (roe == true in ClassLib).
-function ShortyRCD.Tracker:OnEncounterEnd(encounterID, encounterName, difficultyID, groupSize, success)
-  -- We intentionally do not broadcast anything here.
-  -- Each client receives ENCOUNTER_END and can clear ROE timers locally.
-  if not self.timers then return end
-
-  for sender, spells in pairs(self.timers) do
-    for spellID, t in pairs(spells) do
-      local entry = (ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID)) or nil
+function Tracker:OnEncounterEnd()
+  if not self.state then return end
+  for sender, bySpell in pairs(self.state) do
+    for spellID, s in pairs(bySpell) do
+      local entry = ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(tonumber(spellID)) or nil
       if entry and entry.roe == true then
-        spells[spellID] = nil
+        bySpell[spellID] = nil
       end
     end
-    if next(spells) == nil then
-      self.timers[sender] = nil
+    if next(bySpell) == nil then
+      self.state[sender] = nil
     end
   end
 end
 
-function ShortyRCD.Tracker:SweepExpired()
-  local now = Now()
+local function BuildRow(sender, spellID, st, now)
+  local startedAt = st.startedAt or 0
+  local cd = st.cd or 0
+  local ac = st.ac or 0
 
-  for sender, spells in pairs(self.timers) do
-    local senderEmpty = true
+  local activeEnd = startedAt + ac
+  local cdEnd = startedAt + cd
 
-    for spellID, t in pairs(spells) do
-      local cd = t.cd or 0
-      local endsAt = (t.startedAt or 0) + cd
+  local activeRemaining = math.max(0, activeEnd - now)
+  local cdRemaining = math.max(0, cdEnd - now)
 
-      if cd <= 0 or now >= endsAt then
-        spells[spellID] = nil
-      else
-        senderEmpty = false
-      end
-    end
-
-    if senderEmpty then
-      self.timers[sender] = nil
-    end
-  end
+  return {
+    sender = sender,
+    spellID = spellID,
+    iconID = st.iconID,
+    spellName = st.spellName,
+    type = st.type,
+    startedAt = startedAt,
+    cd = cd,
+    ac = ac,
+    activeRemaining = activeRemaining,
+    cooldownRemaining = cdRemaining,
+    isActive = activeRemaining > 0,
+    isCoolingDown = cdRemaining > 0,
+  }
 end
 
--- Returns a flat, sorted list for UI rendering.
-function ShortyRCD.Tracker:GetRows()
-  self:SweepExpired()
-
+function Tracker:GetRows()
   local rows = {}
-  local now = Now()
+  local now = GetTime()
 
-  for sender, spells in pairs(self.timers) do
-    for spellID, t in pairs(spells) do
-      local entry = (ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID)) or nil
-      if entry then
-        local startedAt = t.startedAt or 0
-        local cd = t.cd or 0
-        local ac = t.ac or 0
+  if not self.state then return rows end
 
-        local activeEnds = startedAt + ac
-        local cdEnds = startedAt + cd
+  for sender, bySpell in pairs(self.state) do
+    for spellID, st in pairs(bySpell) do
+      local row = BuildRow(sender, spellID, st, now)
 
-        local activeRem = activeEnds - now
-        if activeRem < 0 then activeRem = 0 end
-
-        local cdRem = cdEnds - now
-        if cdRem < 0 then cdRem = 0 end
-
-        if cdRem > 0 or activeRem > 0 then
-          rows[#rows + 1] = {
-            sender = sender,
-            spellID = spellID,
-            name = entry.name,
-            iconID = entry.iconID,
-            type = entry.type,
-            startedAt = startedAt,
-            cd = cd,
-            ac = ac,
-            activeRemaining = activeRem,
-            cooldownRemaining = cdRem,
-            isActive = (activeRem > 0),
-          }
-        end
+      -- Auto-expire once fully ready again
+      if row.cooldownRemaining <= 0 then
+        bySpell[spellID] = nil
+      else
+        table.insert(rows, row)
       end
+    end
+    if next(bySpell) == nil then
+      self.state[sender] = nil
     end
   end
 
   table.sort(rows, function(a, b)
-    if a.isActive ~= b.isActive then
-      return a.isActive and (not b.isActive) -- active first
-    end
-    if a.sender ~= b.sender then
-      return a.sender < b.sender
-    end
-    return a.spellID < b.spellID
+    if a.isActive ~= b.isActive then return a.isActive end
+    if a.cooldownRemaining ~= b.cooldownRemaining then return a.cooldownRemaining < b.cooldownRemaining end
+    if a.sender ~= b.sender then return a.sender < b.sender end
+    return (a.spellName or "") < (b.spellName or "")
   end)
 
   return rows
