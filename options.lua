@@ -236,9 +236,49 @@ function ShortyRCD.Options:CreatePanel()
     ShortyRCD:Print("Frame unlocked. Drag it, then re-lock here.")
   end)
 
+  -- Spell name display mode: Full | Short | None
+  ShortyRCDDB.ui = ShortyRCDDB.ui or {}
+  if not ShortyRCDDB.ui.spellNames then ShortyRCDDB.ui.spellNames = "full" end
+
+  local snLabel = p:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  snLabel:SetPoint("TOPLEFT", moveBtn, "BOTTOMLEFT", 0, -14)
+  snLabel:SetText("Spell Names:")
+
+  local fullCB = CreateFrame("CheckButton", nil, p, "InterfaceOptionsCheckButtonTemplate")
+  fullCB.Text:SetText("Full")
+  fullCB:SetPoint("TOPLEFT", snLabel, "BOTTOMLEFT", -2, -6)
+
+  local shortCB = CreateFrame("CheckButton", nil, p, "InterfaceOptionsCheckButtonTemplate")
+  shortCB.Text:SetText("Short")
+  shortCB:SetPoint("LEFT", fullCB.Text, "RIGHT", 26, 0)
+
+  local noneCB = CreateFrame("CheckButton", nil, p, "InterfaceOptionsCheckButtonTemplate")
+  noneCB.Text:SetText("None")
+  noneCB:SetPoint("LEFT", shortCB.Text, "RIGHT", 26, 0)
+
+  local function ApplySpellNameMode(mode)
+    ShortyRCDDB.ui.spellNames = mode
+    fullCB:SetChecked(mode == "full")
+    shortCB:SetChecked(mode == "short")
+    noneCB:SetChecked(mode == "none")
+
+    if ShortyRCD and ShortyRCD.UI and ShortyRCD.UI.RefreshRoster then
+      ShortyRCD.UI:RefreshRoster()
+    elseif ShortyRCD and ShortyRCD.UI and ShortyRCD.UI.UpdateBoard then
+      ShortyRCD.UI:UpdateBoard()
+    end
+  end
+
+  fullCB:SetScript("OnClick", function() ApplySpellNameMode("full") end)
+  shortCB:SetScript("OnClick", function() ApplySpellNameMode("short") end)
+  noneCB:SetScript("OnClick", function() ApplySpellNameMode("none") end)
+
+  ApplySpellNameMode(ShortyRCDDB.ui.spellNames)
+
+
   -- Tracking header
   local trackingHeader = p:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  trackingHeader:SetPoint("TOPLEFT", lockCB, "BOTTOMLEFT", 2, -20)
+  trackingHeader:SetPoint("TOPLEFT", fullCB, "BOTTOMLEFT", 2, -18)
   trackingHeader:SetText("Tracking")
 
   -- Scroll container

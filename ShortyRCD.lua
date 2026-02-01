@@ -135,6 +135,9 @@ end
 function ShortyRCD:OnLogin()
   self:InitDB()
 
+  ShortyRCDDB.ui = ShortyRCDDB.ui or {}
+  if not ShortyRCDDB.ui.spellNames then ShortyRCDDB.ui.spellNames = "full" end
+
   -- Initialize subsystems (each module attaches itself if loaded)
   if self.Tracker and self.Tracker.Init then self.Tracker:Init() end
   if self.Comms and self.Comms.Init then self.Comms:Init() end

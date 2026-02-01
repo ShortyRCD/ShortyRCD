@@ -148,6 +148,7 @@ function UI:RefreshRoster()
           classToken = classToken,
           spellID = e.spellID,
           spellName = e.name or ("Spell " .. tostring(e.spellID)),
+          abbr = e.abbr, -- optional abbreviated label
           iconID = e.iconID,
           type = (e.type and tostring(e.type):upper()) or "UTILITY",
           cd = tonumber(e.cd) or 0,
@@ -592,7 +593,25 @@ function UI:UpdateBoard()
 
         local senderHex = RGBToHex(cr, cg, cb)
         local senderText = ("|cff%s%s|r"):format(senderHex, sender or "?")
-        local labelText = ("%s - %s"):format(senderText, d.spellName or ("Spell " .. tostring(d.spellID)))
+
+        local mode = (ShortyRCDDB and ShortyRCDDB.ui and ShortyRCDDB.ui.spellNames) or "full"
+        local spellText = ""
+        if mode == "full" then
+          spellText = d.spellName or ("Spell " .. tostring(d.spellID))
+        elseif mode == "short" then
+          spellText = d.abbr or d.spellName or ("Spell " .. tostring(d.spellID))
+        elseif mode == "none" then
+          spellText = ""
+        else
+          spellText = d.spellName or ("Spell " .. tostring(d.spellID))
+        end
+
+        local labelText
+        if spellText ~= "" then
+          labelText = ("%s - %s"):format(senderText, spellText)
+        else
+          labelText = senderText
+        end
         r.label:SetText(labelText)
 
         if d.iconID then
