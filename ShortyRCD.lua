@@ -204,6 +204,47 @@ function ShortyRCD:GetEffectiveCooldownSeconds(spellID)
       startTime = info.startTime
       duration = info.duration
     end
+-- Delayed broadcast: cooldown APIs can report 0/1s on the same frame as UNIT_SPELLCAST_SUCCEEDED.
+-- We retry for a few frames to capture the real (talent-modified) cooldown before broadcasting.
+ShortyRCD._pendingCastBroadcast = ShortyRCD._pendingCastBroadcast or {}
+
+function ShortyRCD:ScheduleCastBroadcast(spellID, castGUID)
+  if type(spellID) ~= "number" then return end
+  castGUID = castGUID or ("spell:" .. tostring(spellID) .. ":" .. tostring(GetTimePreciseSec and GetTimePreciseSec() or GetTime()))
+
+  local pending = self._pendingCastBroadcast
+  if pending[castGUID] then return end
+
+  pending[castGUID] = { spellID = spellID, tries = 0 }
+
+  local function attempt()
+    local p = pending[castGUID]
+    if not p then return end
+    p.tries = (p.tries or 0) + 1
+
+    local entry = self.GetSpellEntry and self:GetSpellEntry(spellID) or nil
+    local base = entry and entry.cd or nil
+    local cdSec = self.GetEffectiveCooldownSeconds and self:GetEffectiveCooldownSeconds(spellID, base) or nil
+
+    -- Many spells will return 0/1s for a frame or two after the cast event.
+    -- If it looks bogus, retry a couple times.
+    if cdSec and cdSec <= 1.5 and p.tries < 4 then
+      ShortyRCD:Debug(("CD sample too low (%s) for %d, retry %d"):format(tostring(cdSec), spellID, p.tries))
+      C_Timer.After(0.08, attempt)
+      return
+    end
+
+    pending[castGUID] = nil
+
+    if self.Comms and self.Comms.BroadcastCast then
+      -- -- self.Comms:BroadcastCast(spellID, cdSec)  -- replaced by delayed broadcast
+  self:ScheduleCastBroadcast(spellID, castGUID)  -- replaced by delayed broadcast
+  self:ScheduleCastBroadcast(spellID, castGUID)
+    end
+  end
+
+  C_Timer.After(0.05, attempt)
+end
   elseif GetSpellCooldown then
     startTime, duration = GetSpellCooldown(spellID)
   end
@@ -316,3 +357,145 @@ end
 
 -- ---------- Bootstrap ----------
 ShortyRCD:RegisterEvents()
+
+-- ============================================================================
+-- CD override reliability patch (add-only)
+--
+-- Problem: immediate cooldown queries often return the GCD (~1s) right after a
+-- successful cast, especially in instances. For accurate per-player cooldown
+-- broadcast (talent-modified), we retry a few frames and ignore GCD-like
+-- results.
+--
+-- NOTE: This is intentionally add-only: we *override* methods by re-defining
+-- them here (Lua uses the latest definition).
+-- ============================================================================
+
+do
+  local function CooldownSampleSeconds(spellID)
+    spellID = tonumber(spellID)
+    if not spellID then return nil end
+
+    -- Prefer modern API if available.
+    if C_Spell and C_Spell.GetSpellCooldown then
+      local cd = C_Spell.GetSpellCooldown(spellID)
+      if cd and cd.startTime and cd.duration then
+        if cd.startTime > 0 and cd.duration and cd.duration > 0 then
+          return cd.duration
+        end
+      end
+    end
+
+    -- Fallback.
+    if GetSpellCooldown then
+      local start, duration, enabled = GetSpellCooldown(spellID)
+      if enabled == 1 and start and start > 0 and duration and duration > 0 then
+        return duration
+      end
+    end
+
+    return nil
+  end
+
+  local function IsLikelyGCD(seconds)
+    if not seconds then return true end
+    -- Treat anything <= 1.6s as GCD/no-cooldown noise.
+    return seconds <= 1.6
+  end
+
+  -- Override: return a *usable* cooldown duration in seconds, or nil.
+  function ShortyRCD:GetEffectiveCooldownSeconds(spellID)
+    local entry = self.GetSpellEntry and self:GetSpellEntry(spellID) or nil
+    local baseCd = entry and tonumber(entry.cd) or nil
+
+    local s = CooldownSampleSeconds(spellID)
+    if IsLikelyGCD(s) then return nil end
+
+    -- If we know the base cooldown, reject obviously-wrong tiny values.
+    if baseCd and baseCd >= 20 then
+      local minOk = math.max(5, baseCd * 0.25) -- accepts 120s vs 180s, rejects 1s.
+      if s < minOk then
+        return nil
+      end
+    end
+
+    return s
+  end
+
+  -- Override: schedule reliable broadcast (and local tracking) with retry.
+  function ShortyRCD:ScheduleCastBroadcast(spellID, sender)
+    spellID = tonumber(spellID)
+    if not spellID then return end
+
+    local entry = self.GetSpellEntry and self:GetSpellEntry(spellID) or nil
+    if not entry then return end
+
+    local attempts = 0
+    local maxAttempts = 8
+
+    local function finish(cdSec)
+      cdSec = tonumber(cdSec) or tonumber(entry.cd) or 0
+
+      -- Local start (guarantees your own bars even if comms get throttled)
+      if self.Tracker and self.Tracker.OnRemoteCast then
+        self.Tracker:OnRemoteCast(sender or (UnitName("player") or "player"), spellID, cdSec)
+      end
+
+      -- Network broadcast
+      if self.Comms and self.Comms.BroadcastCast then
+        self.Comms:BroadcastCast(spellID, cdSec)
+      end
+
+      if self.Debug then
+        self:Debug(("CD sample for %s (%d): %ss (base %ss)"):format(entry.name or "?", spellID, tostring(cdSec), tostring(entry.cd)))
+      end
+    end
+
+    local function try()
+      attempts = attempts + 1
+      local cdSec = self:GetEffectiveCooldownSeconds(spellID)
+      if cdSec then
+        finish(cdSec)
+        return
+      end
+
+      if attempts >= maxAttempts then
+        finish(nil) -- fallback to base
+        return
+      end
+
+      -- Retry a few frames later; small delay is negligible to humans.
+      local delay = 0.05
+      if attempts >= 3 then delay = 0.10 end
+      if attempts >= 5 then delay = 0.20 end
+      if attempts >= 7 then delay = 0.35 end
+      if C_Timer and C_Timer.After then
+        C_Timer.After(delay, try)
+      else
+        -- Worst-case: no timer API; just fall back.
+        finish(nil)
+      end
+    end
+
+    try()
+  end
+
+  -- Override: hook spellcast success to the scheduler.
+  local _origSucceeded = ShortyRCD.OnSpellcastSucceeded
+  function ShortyRCD:OnSpellcastSucceeded(unit, castGUID, spellID)
+    if unit ~= "player" then return end
+    spellID = tonumber(spellID)
+    if not spellID then return end
+
+    local entry = self.GetSpellEntry and self:GetSpellEntry(spellID) or nil
+    if not entry then
+      -- Preserve any prior debug/behavior.
+      if _origSucceeded then
+        return _origSucceeded(self, unit, castGUID, spellID)
+      end
+      return
+    end
+
+    -- Use reliable broadcast (handles talent-modified CDs)
+    self:ScheduleCastBroadcast(spellID, UnitName("player"))
+  end
+end

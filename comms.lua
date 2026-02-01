@@ -6,11 +6,78 @@ local Comms = ShortyRCD.Comms
 Comms.PREFIX = "ShortyRCD" -- <= 16 chars
 
 local function AllowedChannel()
-  -- Only function inside group content (RAID / PARTY / INSTANCE).
-  -- Mythic+ premades are usually PARTY; LFG instances are INSTANCE_CHAT.
+  -- Instance groups (LFG/Mythic+/LFR) use INSTANCE_CHAT. Raids use RAID.
   if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
   if IsInRaid() then return "RAID" end
   if IsInGroup() then return "PARTY" end
+  return nil
+end
+
+local function GetCooldownDurationSeconds(spellID)
+  -- Best effort: after a successful cast, the spell cooldown API usually reflects
+  -- talent-modified cooldown durations.
+  local startTime, duration
+
+  if C_Spell and C_Spell.GetSpellCooldown then
+    local cd = C_Spell.GetSpellCooldown(spellID)
+    if cd then
+      startTime = cd.startTime
+      duration = cd.duration
+    end
+  end
+
+  if not duration then
+    -- Legacy fallback
+    startTime, duration = GetSpellCooldown(spellID)
+  end
+
+  if type(duration) ~= "number" or duration <= 0 then
+    return nil
+  end
+
+  -- Round to nearest whole second (addon messages should stay small)
+  return math.floor(duration + 0.5)
+end
+
+-- Try to obtain the current cooldown duration for a spell (in seconds).
+-- This reflects talent modifiers *after* the cooldown has been started.
+local function GetCooldownDurationSeconds(spellID)
+  -- Prefer modern API if available.
+  if C_Spell and C_Spell.GetSpellCooldown then
+    local cd = C_Spell.GetSpellCooldown(spellID)
+    if cd and cd.duration and cd.duration > 0 then
+      return cd.duration
+    end
+  end
+
+  -- Fallback.
+  local startTime, duration = GetSpellCooldown(spellID)
+  if duration and duration > 0 then
+    return duration
+  end
+
+  return nil
+end
+
+-- Try to obtain the current cooldown duration for a spell (in seconds).
+-- This reflects talent modifiers *after* the cooldown has been started.
+local function GetCooldownDurationSeconds(spellID)
+  -- Prefer modern API if available.
+  if C_Spell and C_Spell.GetSpellCooldown then
+    local cd = C_Spell.GetSpellCooldown(spellID)
+    if cd and cd.duration and cd.duration > 0 then
+      return cd.duration
+    end
+  end
+
+  -- Fallback to legacy API.
+  if GetSpellCooldown then
+    local startTime, duration, enabled = GetSpellCooldown(spellID)
+    if type(duration) == "number" and duration > 0 then
+      return duration
+    end
+  end
+
   return nil
 end
 
@@ -33,116 +100,83 @@ end
 function Comms:Send(msg)
   local ch = AllowedChannel()
   if not ch then
-    ShortyRCD:Debug("TX blocked (not in group content)")
-    return
+    ShortyRCD:Debug("TX blocked (not in RAID/INSTANCE/PARTY)")
+    return false
   end
 
-  -- Prefer ChatThrottleLib if present (recommended by Blizzard docs).
+  if not C_ChatInfo or not C_ChatInfo.SendAddonMessage then
+    ShortyRCD:Debug("TX blocked (C_ChatInfo.SendAddonMessage unavailable)")
+    return false
+  end
+
+  -- Prefer ChatThrottleLib if present.
   if ChatThrottleLib and ChatThrottleLib.SendAddonMessage then
-    -- Prio can be "BULK"/"NORMAL"/"ALERT". NORMAL is fine for our traffic.
     ChatThrottleLib:SendAddonMessage("NORMAL", self.PREFIX, msg, ch)
-    return
-  end
-
-  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+  else
     C_ChatInfo.SendAddonMessage(self.PREFIX, msg, ch)
   end
+
+  return true
 end
 
-
-function Comms:BroadcastCast(spellID, cdSeconds)
+-- Broadcast a cast event.
+-- If cdOverrideSec is nil, we will try to query the spell's cooldown duration (talents included)
+-- and include it.
+function Comms:BroadcastCast(spellID, cdOverrideSec)
   if type(spellID) ~= "number" then return end
 
-  -- Optional CD override (talents, reductions). Send ms as integer.
-  local cdMs = nil
-  cdSeconds = tonumber(cdSeconds)
-  if cdSeconds and cdSeconds > 0 then
-    cdMs = math.floor(cdSeconds * 1000 + 0.5)
-    -- Don't send nonsense / GCD-ish values.
-    if cdMs <= 1600 then cdMs = nil end
-  end
-
-  if cdMs then
-    self:Send("C|" .. tostring(spellID) .. "|" .. tostring(cdMs))
+  local cdSec = tonumber(cdOverrideSec)
+  if not cdSec or cdSec <= 0 then
+    cdSec = GetCooldownDurationSeconds(spellID)
   else
-    self:Send("C|" .. tostring(spellID))
+    cdSec = math.floor(cdSec + 0.5)
   end
-end
 
-
--- Broadcast a capability list (spells the sender can actually cast right now).
--- Payload: "L|<id1>,<id2>,<id3>"
-function Comms:BroadcastCapabilities(spellIDs)
-  if type(spellIDs) ~= "table" then return end
-  local out = {}
-  for _, id in ipairs(spellIDs) do
-    id = tonumber(id)
-    if id then out[#out+1] = tostring(id) end
+  local payload
+  if cdSec and cdSec > 0 then
+    payload = "C|" .. tostring(spellID) .. "|" .. tostring(cdSec)
+    ShortyRCD:Debug(("TX C|%d cd=%ss"):format(spellID, tostring(cdSec)))
+  else
+    payload = "C|" .. tostring(spellID)
+    ShortyRCD:Debug(("TX C|%d (no cd in msg)"):format(spellID))
   end
-  if #out == 0 then return end
-  self:Send("L|" .. table.concat(out, ","))
-end
 
+  self:Send(payload)
+end
 
 function Comms:OnAddonMessage(prefix, msg, channel, sender)
   if prefix ~= self.PREFIX then return end
   if channel ~= "RAID" and channel ~= "INSTANCE_CHAT" and channel ~= "PARTY" then return end
 
-  local kind, payload = strsplit("|", msg or "", 2)
+  local kind, spellIDStr, cdStr = strsplit("|", msg or "", 3)
+  if kind ~= "C" then return end
 
-  if kind == "C" then
-    local spellIDStr, cdMsStr = strsplit("|", payload or "", 2)
-    local spellID = tonumber(spellIDStr)
-    if not spellID then return end
+  local spellID = tonumber(spellIDStr)
+  if not spellID then return end
 
-    local cdOverride = nil
-    if cdMsStr and cdMsStr ~= "" then
-      local ms = tonumber(cdMsStr)
-      if ms and ms > 0 then
-        cdOverride = ms / 1000
-      end
-    end
+  local cdSec = tonumber(cdStr)
+  if cdSec and cdSec > 0 then
+    cdSec = math.floor(cdSec + 0.5)
+  else
+    cdSec = nil
+  end
 
-    local entry = ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID) or nil
-    if not entry then
-      ShortyRCD:Debug(("RX ignored unknown spellID %s from %s"):format(tostring(payload), tostring(sender)))
-      return
-    end
-
-    if ShortyRCD.Tracker and ShortyRCD.Tracker.OnRemoteCast then
-      ShortyRCD.Tracker:OnRemoteCast(sender, spellID, cdOverride)
-    end
-
-    ShortyRCD:Debug(("RX %s cast %s (%d)"):format(tostring(sender), entry.name or "?", spellID))
+  local entry = ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID) or nil
+  if not entry then
+    ShortyRCD:Debug(("RX ignored unknown spellID %s from %s"):format(tostring(spellIDStr), tostring(sender)))
     return
   end
 
-  if kind == "L" then
-    -- Capability list: "L|id1,id2,id3"
-    local list = {}
-    if payload and payload ~= "" then
-      for idStr in string.gmatch(payload, "[^,]+") do
-        local id = tonumber(idStr)
-        if id then
-          local entry = ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(id) or nil
-          if entry then
-            list[#list+1] = id
-          end
-        end
-      end
-    end
-
-    if ShortyRCD.Tracker and ShortyRCD.Tracker.OnRemoteCapabilities then
-      ShortyRCD.Tracker:OnRemoteCapabilities(sender, list)
-    elseif ShortyRCD.Tracker and ShortyRCD.Tracker.SetCapabilities then
-      ShortyRCD.Tracker:SetCapabilities(sender, list)
-    end
-
-    ShortyRCD:Debug(("RX %s caps [%d]"):format(tostring(sender), #list))
-    return
+  if cdSec then
+    ShortyRCD:Debug(("RX %s cast %s (%d) cd=%ss"):format(tostring(sender), entry.name or "?", spellID, tostring(cdSec)))
+  else
+    ShortyRCD:Debug(("RX %s cast %s (%d) (no cd)"):format(tostring(sender), entry.name or "?", spellID))
   end
 
-  return
+  if ShortyRCD.Tracker and ShortyRCD.Tracker.OnRemoteCast then
+    -- Tracker can accept the 3rd arg; if it doesn't, Lua will ignore extras safely.
+    ShortyRCD.Tracker:OnRemoteCast(sender, spellID, cdSec)
+  end
 end
 
 -- Dev helper: simulate receiving a cast locally (no network).
