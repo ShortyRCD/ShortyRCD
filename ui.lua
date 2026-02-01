@@ -32,6 +32,29 @@ local function RGBToHex(r, g, b)
   return string.format("%02x%02x%02x", math.floor(r*255 + 0.5), math.floor(g*255 + 0.5), math.floor(b*255 + 0.5))
 end
 
+-- Preferred UI font (Expressway). Place the file at:
+-- Interface\AddOns\ShortyRCD\Media\Expressway.ttf
+local PREFERRED_FONT = "Interface\\AddOns\\ShortyRCD\\Media\\Expressway.ttf"
+
+local function GetFallbackFont()
+  if GameFontNormal and GameFontNormal.GetFont then
+    local f = GameFontNormal:GetFont()
+    if f then return f end
+  end
+  return "Fonts\\FRIZQT__.TTF"
+end
+
+local function SetFontSafe(fontString, size, flags)
+  if not fontString or not fontString.SetFont then return end
+  size = size or 12
+  flags = flags or ""
+  local ok = fontString:SetFont(PREFERRED_FONT, size, flags)
+  if not ok then
+    fontString:SetFont(GetFallbackFont(), size, flags)
+  end
+end
+
+
 
 -- Category order + display names
 local CATEGORY_ORDER = { "DEFENSIVE", "HEALING", "UTILITY" }
@@ -189,7 +212,9 @@ function UI:CreateFrame()
   title:SetText("|cffffd000ShortyRCD|r")
   self.title = title
 
-  local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  
+  SetFontSafe(title, 16, "")
+local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sub:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 10, -6)
   sub:SetText("")
   sub:Hide()
@@ -268,15 +293,21 @@ function UI:EnsureRow(i)
   timer:SetJustifyH("RIGHT")
   timer:SetWidth(58)
 
+  SetFontSafe(timer, 12, "")
+
   local label = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   label:SetPoint("LEFT", bar, "LEFT", 5, 0)
   label:SetPoint("RIGHT", timer, "LEFT", -6, 0)
   label:SetJustifyH("LEFT")
 
+  SetFontSafe(label, 12, "")
+
   -- Header label (for category headers)
   local headerText = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   headerText:SetPoint("LEFT", r, "LEFT", 0, 0)
   headerText:SetJustifyH("LEFT")
+
+  SetFontSafe(headerText, 12, "OUTLINE")
 
   r.bg = bg
   r.icon = icon
