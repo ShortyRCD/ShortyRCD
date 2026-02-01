@@ -5,25 +5,19 @@ ShortyRCD.Comms = ShortyRCD.Comms or {}
 local Comms = ShortyRCD.Comms
 Comms.PREFIX = "ShortyRCD" -- <= 16 chars
 
+-- Prefer ChatThrottleLib if present (recommended by Blizzard docs / best practice)
+local CTL = _G.ChatThrottleLib
+
 local function AllowedChannel()
-  -- LFG / LFR
-  if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
-    return "INSTANCE_CHAT"
-  end
-
-  -- Raid (non-LFG)
-  if IsInRaid() then
-    return "RAID"
-  end
-
-  -- 5-man party (manual group)
-  if IsInGroup() then
-    return "PARTY"
-  end
-
+  -- Works in:
+  --  * LFG / LFR / Instance groups  -> INSTANCE_CHAT
+  --  * Raid groups                  -> RAID
+  --  * Premade / normal parties     -> PARTY (this includes Mythic+ premade parties)
+  if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+  if IsInRaid() then return "RAID" end
+  if IsInGroup() then return "PARTY" end
   return nil
 end
-
 
 function Comms:Init()
   if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -41,13 +35,29 @@ function Comms:Init()
   end, self)
 end
 
+local function SendAddon(prefix, msg, chatType, target)
+  if CTL and CTL.SendAddonMessage then
+    -- priority: "NORMAL" is fine for small messages; CTL will throttle safely
+    CTL:SendAddonMessage("NORMAL", prefix, msg, chatType, target)
+    return true
+  end
+  if C_ChatInfo and C_ChatInfo.SendAddonMessage then
+    return C_ChatInfo.SendAddonMessage(prefix, msg, chatType, target)
+  end
+  return false
+end
+
 function Comms:Send(msg)
   local ch = AllowedChannel()
   if not ch then
-    ShortyRCD:Debug("TX blocked (not in RAID/INSTANCE)")
+    ShortyRCD:Debug("TX blocked (not in RAID/PARTY/INSTANCE)")
     return
   end
-  C_ChatInfo.SendAddonMessage(self.PREFIX, msg, ch)
+
+  local ok = SendAddon(self.PREFIX, msg, ch)
+  if not ok then
+    ShortyRCD:Debug(("TX failed (%s) msg=%s"):format(tostring(ch), tostring(msg)))
+  end
 end
 
 function Comms:BroadcastCast(spellID)
@@ -65,7 +75,7 @@ function Comms:OnAddonMessage(prefix, msg, channel, sender)
   local spellID = tonumber(spellIDStr)
   if not spellID then return end
 
-  local entry = ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID) or nil
+  local entry = (ShortyRCD.GetSpellEntry and ShortyRCD:GetSpellEntry(spellID)) or nil
   if not entry then
     ShortyRCD:Debug(("RX ignored unknown spellID %s from %s"):format(tostring(spellIDStr), tostring(sender)))
     return
@@ -90,9 +100,9 @@ function Comms:DevInjectCast(spellID, senderOverride)
   local sender = senderOverride
   if not sender then
     local name, realm = UnitFullName("player")
-    if realm and realm ~= "" then sender = name .. "-" .. realm else sender = name end
+    sender = (realm and realm ~= "") and (name .. "-" .. realm) or name
   end
 
-  -- Use RAID as a valid receive channel to exercise the real receive path.
-  self:OnAddonMessage(self.PREFIX, "C|" .. tostring(spellID), "RAID", sender)
+  -- Use PARTY as a valid receive channel to exercise the real receive path.
+  self:OnAddonMessage(self.PREFIX, "C|" .. tostring(spellID), "PARTY", sender)
 end
