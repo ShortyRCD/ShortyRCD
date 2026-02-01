@@ -95,6 +95,7 @@ function UI:Init()
 
   self:CreateFrame()
   self:RestorePosition()
+  self:RestoreSize()
   self:ApplyLockState()
   self:RegisterRosterEvents()
   self:RefreshRoster()
@@ -233,6 +234,55 @@ local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f:StopMovingOrSizing()
     UI:SavePosition()
   end)
+
+
+  -- Resizing (Details-style bottom-right grip). Only visible/active when unlocked.
+  f:SetResizable(true)
+  if f.SetResizeBounds then
+    f:SetResizeBounds(260, 180)
+  end
+
+  local grip = CreateFrame("Button", nil, f)
+  grip:SetSize(16, 16)
+  grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
+  grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+  grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+  grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+  grip:Hide()
+
+  grip:SetScript("OnMouseDown", function(_, button)
+    if button ~= "LeftButton" then return end
+    if ShortyRCDDB.locked then return end
+    f:StartSizing("BOTTOMRIGHT")
+  end)
+
+  grip:SetScript("OnMouseUp", function()
+    f:StopMovingOrSizing()
+    UI:SaveSize()
+    UI.needsLayout = true
+  end)
+
+  f:HookScript("OnSizeChanged", function()
+    if not (ShortyRCDDB and ShortyRCDDB.frame and ShortyRCDDB.frame.userSized) then return end
+
+    -- Mark that a relayout is needed, but debounce the expensive rebuild so resizing feels smooth.
+    UI.needsLayout = true
+    UI._resizePending = true
+
+    if UI._resizeScheduled then return end
+    UI._resizeScheduled = true
+
+    -- Debounce: run at most ~30fps during active resizing.
+    C_Timer.After(0.03, function()
+      UI._resizeScheduled = false
+      if UI._resizePending then
+        UI._resizePending = false
+        UI:UpdateBoard()
+      end
+    end)
+  end)
+
+  self.sizeGrip = grip
 
   self.frame = f
   self.header = header
@@ -448,7 +498,14 @@ function UI:UpdateBoard()
   local columns, usableH = self:ComputeFlowColumns(lines)
 
   local cols = #columns
-  local width = (PAD_L + PAD_R) + cols * COL_W + (cols - 1) * GAP_X
+  local userSized = (ShortyRCDDB and ShortyRCDDB.frame and ShortyRCDDB.frame.userSized) == true
+  local frameW = self.frame:GetWidth() or 360
+  local colW = COL_W
+  if userSized and cols > 0 then
+    colW = math.floor((frameW - (PAD_L + PAD_R) - (cols - 1) * GAP_X) / cols)
+    colW = math.max(240, colW)
+  end
+  local width = (PAD_L + PAD_R) + cols * colW + (cols - 1) * GAP_X
   width = math.min(width, GetMaxScreenWidth())
 
   -- Compute height as min(max column used height + overhead, max screen height),
@@ -476,9 +533,12 @@ function UI:UpdateBoard()
   local height = math.min(GetMaxScreenHeight(), topOverhead + maxUsed)
   height = math.max(200, height)
 
-  if self.needsLayout or self.lastW ~= width or self.lastH ~= height then
+  if (not userSized) and (self.needsLayout or self.lastW ~= width or self.lastH ~= height) then
     self.frame:SetSize(width, height)
     self.lastW, self.lastH = width, height
+    self.needsLayout = false
+  else
+    -- If the user manually sized the frame, do not override it.
     self.needsLayout = false
   end
 
@@ -494,7 +554,7 @@ function UI:UpdateBoard()
       local r = self:EnsureRow(rowIndex)
       r:ClearAllPoints()
       r:SetPoint("TOPLEFT", self.list, "TOPLEFT", startX, -y)
-      r:SetSize(COL_W - 20, ROW_H)
+      r:SetSize(colW - 20, ROW_H)
 
       if line.kind == "header" then
         -- Header styling: no icon/bar, just text
@@ -585,7 +645,7 @@ function UI:UpdateBoard()
       end
     end
 
-    startX = startX + COL_W + GAP_X
+    startX = startX + colW + GAP_X
   end
 
   self:HideExtraRows(rowIndex)
@@ -607,6 +667,28 @@ function UI:RestorePosition()
   self.frame:SetPoint(p[1], rel, p[3], p[4], p[5])
 end
 
+function UI:SaveSize()
+  if not self.frame then return end
+  ShortyRCDDB.frame.size = ShortyRCDDB.frame.size or {}
+  ShortyRCDDB.frame.size.w = self.frame:GetWidth()
+  ShortyRCDDB.frame.size.h = self.frame:GetHeight()
+  ShortyRCDDB.frame.userSized = true
+end
+
+function UI:RestoreSize()
+  if not self.frame then return end
+  local s = ShortyRCDDB.frame.size
+  if type(s) ~= "table" then return end
+  local w = tonumber(s.w)
+  local h = tonumber(s.h)
+  if w and h and w > 0 and h > 0 then
+    self.frame:SetSize(w, h)
+    self.lastW, self.lastH = w, h
+    ShortyRCDDB.frame.userSized = true
+  end
+end
+
+
 function UI:SetLocked(locked)
   ShortyRCDDB.locked = (locked == true)
   self:ApplyLockState()
@@ -621,6 +703,7 @@ function UI:ApplyLockState()
   self.frame:EnableMouse(not locked)
 
   if locked then
+    if self.sizeGrip then self.sizeGrip:Hide() end
     -- Transparent container/header/title. Keep categories + spell rows visible.
     self.frame:SetBackdropColor(0.07, 0.08, 0.10, 0.00)
     self.frame:SetBackdropBorderColor(0.12, 0.13, 0.16, 0.00)
@@ -634,6 +717,7 @@ function UI:ApplyLockState()
       self.title:SetAlpha(0.0)
     end
   else
+    if self.sizeGrip then self.sizeGrip:Show() end
     self.frame:SetBackdropColor(0.07, 0.08, 0.10, 0.92)
     self.frame:SetBackdropBorderColor(0.12, 0.13, 0.16, 1.00)
 
