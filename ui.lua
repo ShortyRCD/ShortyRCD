@@ -25,6 +25,14 @@ local function FormatTime(sec)
   end
 end
 
+local function RGBToHex(r, g, b)
+  r = math.max(0, math.min(1, tonumber(r) or 1))
+  g = math.max(0, math.min(1, tonumber(g) or 1))
+  b = math.max(0, math.min(1, tonumber(b) or 1))
+  return string.format("%02x%02x%02x", math.floor(r*255 + 0.5), math.floor(g*255 + 0.5), math.floor(b*255 + 0.5))
+end
+
+
 -- Category order + display names
 local CATEGORY_ORDER = { "DEFENSIVE", "HEALING", "UTILITY" }
 local CATEGORY_LABEL = {
@@ -179,10 +187,12 @@ function UI:CreateFrame()
   local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("LEFT", 10, 0)
   title:SetText("|cffffd000ShortyRCD|r")
+  self.title = title
 
   local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sub:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 10, -6)
-  sub:SetText("Raid cooldown tracker")
+  sub:SetText("")
+  sub:Hide()
 
   f:SetScript("OnDragStart", function()
     if ShortyRCDDB.locked then return end
@@ -198,9 +208,9 @@ function UI:CreateFrame()
   self.sub = sub
 
   local list = CreateFrame("Frame", nil, f)
-  list:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -10)
+  list:SetPoint("TOPLEFT", header, "BOTTOMLEFT", PAD_L, -10)
   list:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", PAD_L, PAD_B)
-  list:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD_R, -62)
+  list:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD_R, -46)
   self.list = list
 end
 
@@ -483,7 +493,9 @@ function UI:UpdateBoard()
         r.label:Show()
         r.timer:Show()
 
-        local labelText = ("%s - %s"):format(sender or "?", d.spellName or ("Spell " .. tostring(d.spellID)))
+        local senderHex = RGBToHex(cr, cg, cb)
+        local senderText = ("|cff%s%s|r"):format(senderHex, sender or "?")
+        local labelText = ("%s - %s"):format(senderText, d.spellName or ("Spell " .. tostring(d.spellID)))
         r.label:SetText(labelText)
 
         if d.iconID then
@@ -565,9 +577,36 @@ end
 
 function UI:ApplyLockState()
   if not self.frame then return end
-  if ShortyRCDDB.locked then
-    self.frame:EnableMouse(false)
+
+  local locked = (ShortyRCDDB and ShortyRCDDB.locked) == true
+
+  -- Movement interaction
+  self.frame:EnableMouse(not locked)
+
+  if locked then
+    -- Transparent container/header/title. Keep categories + spell rows visible.
+    self.frame:SetBackdropColor(0.07, 0.08, 0.10, 0.00)
+    self.frame:SetBackdropBorderColor(0.12, 0.13, 0.16, 0.00)
+
+    if self.header then
+      self.header:SetBackdropColor(0.05, 0.06, 0.08, 0.00)
+      self.header:SetBackdropBorderColor(0.12, 0.13, 0.16, 0.00)
+    end
+
+    if self.title then
+      self.title:SetAlpha(0.0)
+    end
   else
-    self.frame:EnableMouse(true)
+    self.frame:SetBackdropColor(0.07, 0.08, 0.10, 0.92)
+    self.frame:SetBackdropBorderColor(0.12, 0.13, 0.16, 1.00)
+
+    if self.header then
+      self.header:SetBackdropColor(0.05, 0.06, 0.08, 0.98)
+      self.header:SetBackdropBorderColor(0.12, 0.13, 0.16, 1.00)
+    end
+
+    if self.title then
+      self.title:SetAlpha(1.0)
+    end
   end
 end

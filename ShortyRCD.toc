@@ -5,6 +5,8 @@
 ## Version: 0.1.0
 ## SavedVariables: ShortyRCDDB
 
+#Libs\ChatThrottleLib\ChatThrottleLib.lua
+
 class_library.lua
 tracker.lua
 comms.lua
