@@ -6,11 +6,24 @@ local Comms = ShortyRCD.Comms
 Comms.PREFIX = "ShortyRCD" -- <= 16 chars
 
 local function AllowedChannel()
-  -- Only function inside RAID and INSTANCE (Mythic+/LFG) groups
-  if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
-  if IsInRaid() then return "RAID" end
+  -- LFG / LFR
+  if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+    return "INSTANCE_CHAT"
+  end
+
+  -- Raid (non-LFG)
+  if IsInRaid() then
+    return "RAID"
+  end
+
+  -- 5-man party (manual group)
+  if IsInGroup() then
+    return "PARTY"
+  end
+
   return nil
 end
+
 
 function Comms:Init()
   if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -44,7 +57,7 @@ end
 
 function Comms:OnAddonMessage(prefix, msg, channel, sender)
   if prefix ~= self.PREFIX then return end
-  if channel ~= "RAID" and channel ~= "INSTANCE_CHAT" then return end
+  if channel ~= "RAID" and channel ~= "INSTANCE_CHAT" and channel ~= "PARTY" then return end
 
   local kind, spellIDStr = strsplit("|", msg or "", 2)
   if kind ~= "C" then return end
