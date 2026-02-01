@@ -1,0 +1,62 @@
+name: Build & Release (tagged)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required addon files exist
+        run: |
+          set -e
+          test -f "ShortyRCD.toc" || (echo "ERROR: ShortyRCD.toc not found at repo root" && exit 1)
+          test -f "ShortyRCD.lua" || (echo "ERROR: ShortyRCD.lua not found at repo root" && exit 1)
+          test -d "libs" || (echo "ERROR: libs/ folder not found at repo root" && exit 1)
+
+      - name: Stage addon payload (exclude repo/dev files)
+        run: |
+          set -e
+          rm -rf _stage
+          mkdir -p _stage/ShortyRCD
+
+          # Copy ONLY what should ship
+          cp -a libs _stage/ShortyRCD/
+          cp -a *.lua _stage/ShortyRCD/
+          cp -a ShortyRCD.toc _stage/ShortyRCD/
+
+          # Optional: strip OS junk if it exists
+          find _stage -name ".DS_Store" -delete || true
+          find _stage -name "Thumbs.db" -delete || true
+
+          echo "Staged contents:"
+          ls -lah _stage/ShortyRCD
+
+      - name: Create zip
+        run: |
+          set -e
+          rm -f ShortyRCD.zip
+          cd _stage
+          zip -r ../ShortyRCD.zip ShortyRCD
+          cd ..
+
+          echo "Zip listing:"
+          unzip -l ShortyRCD.zip | head -n 60
+
+      - name: Create GitHub Release and upload zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ShortyRCD.zip
+          generate_release_notes: true
+          body: |
+            Guild release build.
+            Not intended for general public use. No external support.
