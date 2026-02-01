@@ -2,10 +2,10 @@
 ## Title: ShortyRCD
 ## Notes: Distributed raid cooldown tracker
 ## Author: ShortyWoW
-## Version: 0.1.0
+## Version: 0.1.3
 ## SavedVariables: ShortyRCDDB
 
-#Libs\ChatThrottleLib\ChatThrottleLib.lua
+libs\ChatThrottleLib.lua
 
 class_library.lua
 tracker.lua
@@ -13,5 +13,3 @@ comms.lua
 ui.lua
 options.lua
 ShortyRCD.lua
-
-## debug_poc.lua # You can ignore this, it was just a proof of concept.
