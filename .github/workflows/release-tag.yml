@@ -23,6 +23,20 @@ jobs:
           test -f "ShortyRCD.lua" || (echo "ERROR: ShortyRCD.lua not found at repo root" && exit 1)
           test -d "libs" || (echo "ERROR: libs/ folder not found at repo root" && exit 1)
 
+      - name: Set TOC version from tag
+        run: |
+          set -e
+          VER="${GITHUB_REF_NAME#v}"   # v0.1.4 -> 0.1.4
+
+          if grep -qE '^## Version:' ShortyRCD.toc; then
+            sed -i "s/^## Version:.*/## Version: ${VER}/" ShortyRCD.toc
+          else
+            echo "## Version: ${VER}" >> ShortyRCD.toc
+          fi
+
+          echo "TOC version now:"
+          grep -E '^## Version:' ShortyRCD.toc || true
+
       - name: Stage addon payload (exclude repo/dev files)
         run: |
           set -e
@@ -45,9 +59,7 @@ jobs:
         run: |
           set -e
           rm -f ShortyRCD.zip
-          cd _stage
-          zip -r ../ShortyRCD.zip ShortyRCD
-          cd ..
+          (cd _stage && zip -r ../ShortyRCD.zip ShortyRCD)
 
           echo "Zip listing:"
           unzip -l ShortyRCD.zip | head -n 60
