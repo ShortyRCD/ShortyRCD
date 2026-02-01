@@ -22,11 +22,13 @@ jobs:
           test -f "ShortyRCD.toc" || (echo "ERROR: ShortyRCD.toc not found at repo root" && exit 1)
           test -f "ShortyRCD.lua" || (echo "ERROR: ShortyRCD.lua not found at repo root" && exit 1)
           test -d "libs" || (echo "ERROR: libs/ folder not found at repo root" && exit 1)
+          test -f "ShortyRCD.blp" || (echo "ERROR: ShortyRCD.blp not found at repo root" && exit 1)
 
       - name: Set TOC version from tag
         run: |
           set -e
-          VER="${GITHUB_REF_NAME#v}"   # v0.1.4 -> 0.1.4
+          VER="${GITHUB_REF_NAME#v}"   # v0.1.6 -> 0.1.6
+          echo "VER=${VER}" >> $GITHUB_ENV
 
           if grep -qE '^## Version:' ShortyRCD.toc; then
             sed -i "s/^## Version:.*/## Version: ${VER}/" ShortyRCD.toc
@@ -37,7 +39,7 @@ jobs:
           echo "TOC version now:"
           grep -E '^## Version:' ShortyRCD.toc || true
 
-      - name: Stage addon payload (exclude repo/dev files)
+      - name: Stage addon payload (force ShortyRCD folder; exclude repo/dev files)
         run: |
           set -e
           rm -rf _stage
@@ -47,6 +49,7 @@ jobs:
           cp -a libs _stage/ShortyRCD/
           cp -a *.lua _stage/ShortyRCD/
           cp -a ShortyRCD.toc _stage/ShortyRCD/
+          cp -a ShortyRCD.blp _stage/ShortyRCD/
 
           # Optional: strip OS junk if it exists
           find _stage -name ".DS_Store" -delete || true
@@ -55,19 +58,22 @@ jobs:
           echo "Staged contents:"
           ls -lah _stage/ShortyRCD
 
-      - name: Create zip
+      - name: Create zip (versioned filename for WowUp display)
         run: |
           set -e
-          rm -f ShortyRCD.zip
-          (cd _stage && zip -r ../ShortyRCD.zip ShortyRCD)
+          ZIP_NAME="ShortyRCD-${VER}.zip"
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+
+          rm -f "${ZIP_NAME}"
+          (cd _stage && zip -r "../${ZIP_NAME}" ShortyRCD)
 
           echo "Zip listing:"
-          unzip -l ShortyRCD.zip | head -n 60
+          unzip -l "${ZIP_NAME}" | head -n 80
 
       - name: Create GitHub Release and upload zip
         uses: softprops/action-gh-release@v2
         with:
-          files: ShortyRCD.zip
+          files: ${{ env.ZIP_NAME }}
           generate_release_notes: true
           body: |
             Guild release build.
