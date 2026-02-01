@@ -100,7 +100,18 @@ local function SlashHandler(msg)
     return
   end
 
-  -- Dev helper: simulate receiving a cast from addon comms.
+  
+  if msg == "lock" then
+    ShortyRCDDB.locked = not ShortyRCDDB.locked
+    if ShortyRCD.UI and ShortyRCD.UI.SetLocked then
+      ShortyRCD.UI:SetLocked(ShortyRCDDB.locked)
+    elseif ShortyRCD.UI and ShortyRCD.UI.ApplyLockState then
+      ShortyRCD.UI:ApplyLockState()
+    end
+    ShortyRCD:Print("Lock: " .. tostring(ShortyRCDDB.locked))
+    return
+  end
+-- Dev helper: simulate receiving a cast from addon comms.
   -- Usage: /srcd inject <spellID>
   local cmd, rest = strsplit(" ", msg, 2)
   if cmd == "inject" then
@@ -117,7 +128,7 @@ local function SlashHandler(msg)
     return
   end
 
-  ShortyRCD:Print("Usage: /srcd  (options) | /srcd debug | /srcd inject <spellID>")
+  ShortyRCD:Print("Usage: /srcd (options) | /srcd debug | /srcd lock | /srcd inject <spellID>")
 end
 
 -- ---------- Init ----------
