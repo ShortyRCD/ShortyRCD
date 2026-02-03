@@ -8,6 +8,96 @@ Comms.PREFIX = "ShortyRCD" -- <= 16 chars
 local function AllowedChannel()
   -- Instance groups (LFG/Mythic+/LFR) use INSTANCE_CHAT. Raids use RAID.
   if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+
+
+-- -----------------------
+-- Version request/response (/srcd missing)
+-- -----------------------
+Comms._versionRequests = Comms._versionRequests or {}
+
+local function FullName(unit)
+  local n, r = UnitFullName(unit)
+  if not n then return nil end
+  if r and r ~= "" then return n .. "-" .. r end
+  return n
+end
+
+local function CollectGroupRoster()
+  local roster = {}
+  if IsInRaid() then
+    local n = GetNumGroupMembers()
+    for i = 1, n do
+      local u = "raid" .. i
+      if UnitExists(u) and UnitIsConnected(u) then
+        local fn = FullName(u)
+        if fn then roster[fn] = true end
+      end
+    end
+  elseif IsInGroup() then
+    local fn = FullName("player")
+    if fn then roster[fn] = true end
+    for i = 1, 4 do
+      local u = "party" .. i
+      if UnitExists(u) and UnitIsConnected(u) then
+        local fn2 = FullName(u)
+        if fn2 then roster[fn2] = true end
+      end
+    end
+  else
+    local fn = FullName("player")
+    if fn then roster[fn] = true end
+  end
+  return roster
+end
+
+function Comms:RequestVersions()
+  local ch = AllowedChannel()
+  if not ch then
+    ShortyRCD:Print("Not in a group.")
+    return
+  end
+
+  local now = (GetTimePreciseSec and GetTimePreciseSec() or GetTime())
+  local nonce = tostring(math.floor(now * 1000))
+  local roster = CollectGroupRoster()
+  self._versionRequests[nonce] = { roster = roster, responses = {} }
+
+  local me = FullName("player")
+  if me then
+    self._versionRequests[nonce].responses[me] = ShortyRCD.VERSION or "DEV"
+  end
+
+  self:Send("V|REQ|" .. nonce .. "|" .. tostring(ShortyRCD.VERSION or "DEV"))
+
+  C_Timer.After(2.0, function()
+    self:PrintVersionReport(nonce)
+  end)
+end
+
+function Comms:PrintVersionReport(nonce)
+  local req = self._versionRequests and self._versionRequests[nonce]
+  if not req then return end
+
+  local green = "|cff00ff00"
+  local red = "|cffff0000"
+  local reset = "|r"
+
+  local names = {}
+  for n in pairs(req.roster or {}) do names[#names+1] = n end
+  table.sort(names, function(a,b) return a:lower() < b:lower() end)
+
+  for _, name in ipairs(names) do
+    local ver = req.responses and req.responses[name]
+    if ver then
+      ShortyRCD:Print(green .. name .. " - v" .. tostring(ver) .. reset)
+    else
+      ShortyRCD:Print(red .. name .. " - MISSING" .. reset)
+    end
+  end
+
+  self._versionRequests[nonce] = nil
+end
+
   if IsInRaid() then return "RAID" end
   if IsInGroup() then return "PARTY" end
   return nil
@@ -181,6 +271,24 @@ function Comms:OnAddonMessage(prefix, msg, channel, sender)
   if channel ~= "RAID" and channel ~= "INSTANCE_CHAT" and channel ~= "PARTY" then return end
 
   local kind, a, b = strsplit("|", msg or "", 3)
+
+  -- Version request/response: V|REQ|nonce|ver  /  V|RES|nonce|ver
+  if kind == "V" then
+    local _, sub, nonce, ver = strsplit("|", msg or "", 4)
+    if sub == "REQ" then
+      self:Send("V|RES|" .. tostring(nonce or "") .. "|" .. tostring(ShortyRCD.VERSION or "DEV"))
+      return
+    elseif sub == "RES" then
+      local req = self._versionRequests and self._versionRequests[tostring(nonce or "")]
+      if req then
+        req.responses = req.responses or {}
+        req.responses[tostring(sender)] = tostring(ver or "")
+      end
+      return
+    end
+    return
+  end
+
 
   -- Capability request: R|  (ask everyone to send L|...)
   if kind == "R" then

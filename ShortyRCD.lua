@@ -3,14 +3,21 @@
 local ADDON_NAME = ...
 ShortyRCD = ShortyRCD or {}
 ShortyRCD.ADDON_NAME = ADDON_NAME
-local version = C_AddOns.GetAddOnMetadata(ShortyRCD.ADDON_NAME, "Version")
+local addonName = ...
+local version = C_AddOns.GetAddOnMetadata(addonName, "Version")
 ShortyRCD.VERSION = version or "DEV"
+
 
 ShortyRCDDB = ShortyRCDDB or nil
 
 ShortyRCD.DEFAULTS = {
   debug = false,
   locked = false,
+  interruptTrackerEnabled = false,
+  interrupt = {
+    point = { "CENTER", "UIParent", "CENTER", 420, 0 },
+    grouping = "minimal",
+  },
   frame = {
     point = { "CENTER", "UIParent", "CENTER", 0, 0 },
   },
@@ -156,19 +163,53 @@ end
 
 local function SlashHandler(msg)
   msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+
   if msg == "" or msg == "options" then
     OpenOptions()
     return
   end
+
   if msg == "debug" then
     ShortyRCDDB.debug = not ShortyRCDDB.debug
     ShortyRCD:Print("Debug: " .. tostring(ShortyRCDDB.debug))
     return
   end
 
+  local cmd, rest = strsplit(" ", msg, 2)
+
+  if cmd == "missing" then
+    if ShortyRCD.Comms and ShortyRCD.Comms.RequestVersions then
+      ShortyRCD.Comms:RequestVersions()
+      return
+    end
+    ShortyRCD:Print("Comms module not ready; cannot request versions.")
+    return
+  end
+
+  if cmd == "lock" then
+    ShortyRCDDB.locked = true
+    if ShortyRCD.UI and ShortyRCD.UI.ApplyLockState then
+      ShortyRCD.UI:ApplyLockState()
+    elseif ShortyRCD.UI and ShortyRCD.UI.SetLocked then
+      ShortyRCD.UI:SetLocked(true)
+    end
+    ShortyRCD:Print("Windows locked.")
+    return
+  end
+
+  if cmd == "unlock" then
+    ShortyRCDDB.locked = false
+    if ShortyRCD.UI and ShortyRCD.UI.ApplyLockState then
+      ShortyRCD.UI:ApplyLockState()
+    elseif ShortyRCD.UI and ShortyRCD.UI.SetLocked then
+      ShortyRCD.UI:SetLocked(false)
+    end
+    ShortyRCD:Print("Windows unlocked.")
+    return
+  end
+
   -- Dev helper: simulate receiving a cast from addon comms.
   -- Usage: /srcd inject <spellID>
-  local cmd, rest = strsplit(" ", msg, 2)
   if cmd == "inject" then
     local spellID = tonumber(rest)
     if not spellID then
@@ -183,10 +224,11 @@ local function SlashHandler(msg)
     return
   end
 
-  ShortyRCD:Print("Usage: /srcd  (options) | /srcd debug | /srcd inject <spellID>")
+  ShortyRCD:Print("Usage: /srcd  (options) | /srcd missing | /srcd lock | /srcd unlock | /srcd debug | /srcd inject <spellID>")
 end
 
 -- ---------- Init ----------
+
 function ShortyRCD:OnLogin()
   self:InitDB()
 
@@ -194,6 +236,7 @@ function ShortyRCD:OnLogin()
   if self.Tracker and self.Tracker.Init then self.Tracker:Init() end
   if self.Comms and self.Comms.Init then self.Comms:Init() end
   if self.UI and self.UI.Init then self.UI:Init() end
+  if self.InterruptUI and self.InterruptUI.Init then self.InterruptUI:Init() end
   if self.Options and self.Options.Init then self.Options:Init() end
 
   -- Slash command
@@ -438,11 +481,20 @@ do
     if not spellID then return nil end
 
     -- Prefer modern API if available.
+    local function SafeToNumber(v)
+      local ok, n = pcall(tonumber, v)
+      if ok and type(n) == "number" then return n end
+      return nil
+    end
+
     if C_Spell and C_Spell.GetSpellCooldown then
       local cd = C_Spell.GetSpellCooldown(spellID)
-      if cd and cd.startTime and cd.duration then
-        if cd.startTime > 0 and cd.duration and cd.duration > 0 then
-          return cd.duration
+      if cd then
+        local duration = SafeToNumber(cd.duration)
+        -- 12.0+: CooldownInfo fields like startTime can be protected ("secret").
+        -- We only need duration; ready spells return 0 so this is safe.
+        if duration and duration > 0 then
+          return duration
         end
       end
     end
