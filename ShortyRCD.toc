@@ -2,7 +2,7 @@
 ## Title: ShortyRCD
 ## Notes: Distributed raid cooldown tracker
 ## Author: ShortyWoW
-## Version: 0.1.7
+## Version: 0.2.3
 ## SavedVariables: ShortyRCDDB
 ## IconTexture: Interface\AddOns\ShortyRCD\ShortyRCD.blp
 

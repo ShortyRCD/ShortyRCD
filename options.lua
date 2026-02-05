@@ -315,14 +315,69 @@ function ShortyRCD.Options:CreatePanel()
   ApplySpellNameMode(ShortyRCDDB.ui.spellNames)
 
 
+  
+
+-- -------------------------------------------------
+-- Bar Theme: progress bar texture/style presets
+-- -------------------------------------------------
+ShortyRCDDB.ui.barTheme = ShortyRCDDB.ui.barTheme or "classic"
+
+local themeLabel = p:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+themeLabel:SetPoint("TOPLEFT", bySpellCB, "BOTTOMLEFT", 2, -14)
+themeLabel:SetText("Bar Theme:")
+
+local themeDrop = CreateFrame("Frame", "ShortyRCD_BarThemeDropDown", p, "UIDropDownMenuTemplate")
+themeDrop:SetPoint("TOPLEFT", themeLabel, "BOTTOMLEFT", -16, -6)
+
+local themeMap = {
+  { key = "classic", name = "Classic" },
+  { key = "smooth",  name = "Smooth (Raid)" },
+  { key = "striped", name = "Striped (Skills)" },
+  { key = "flat",    name = "Flat (Minimal)" },
+  { key = "dark",    name = "Dark Steel" },
+}
+
+local function GetThemeNameByKey(k)
+  for _, t in ipairs(themeMap) do
+    if t.key == k then return t.name end
+  end
+  return "Classic"
+end
+
+local function ApplyThemeKey(key)
+  ShortyRCDDB.ui.barTheme = key
+
+  if ShortyRCD and ShortyRCD.UI and ShortyRCD.UI.ApplyBarTheme then
+    ShortyRCD.UI:ApplyBarTheme()
+  elseif ShortyRCD and ShortyRCD.UI and ShortyRCD.UI.UpdateBoard then
+    ShortyRCD.UI:UpdateBoard()
+  end
+
+  UIDropDownMenu_SetText(themeDrop, GetThemeNameByKey(key))
+end
+
+UIDropDownMenu_Initialize(themeDrop, function(self, level)
+  for _, t in ipairs(themeMap) do
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = t.name
+    info.func = function() ApplyThemeKey(t.key) end
+    info.checked = (ShortyRCDDB.ui.barTheme == t.key)
+    UIDropDownMenu_AddButton(info, level)
+  end
+end)
+
+UIDropDownMenu_SetWidth(themeDrop, 200)
+UIDropDownMenu_JustifyText(themeDrop, "LEFT")
+UIDropDownMenu_SetText(themeDrop, GetThemeNameByKey(ShortyRCDDB.ui.barTheme))
+
   -- Tracking header
   local trackingHeader = p:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  trackingHeader:SetPoint("TOPLEFT", fullCB, "BOTTOMLEFT", 2, -18)
+  trackingHeader:SetPoint("TOPLEFT", themeDrop, "BOTTOMLEFT", 16, -12)
   trackingHeader:SetText("Tracking")
 
   -- Fix layout: ensure Tracking section starts below Grouping options (avoid overlap)
   trackingHeader:ClearAllPoints()
-  trackingHeader:SetPoint("TOPLEFT", bySpellCB, "BOTTOMLEFT", 2, -18)
+  trackingHeader:SetPoint("TOPLEFT", themeDrop, "BOTTOMLEFT", 16, -12)
 
   -- Scroll container
   local scrollFrame = CreateFrame("ScrollFrame", nil, p, "UIPanelScrollFrameTemplate")

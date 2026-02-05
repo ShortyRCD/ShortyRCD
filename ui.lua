@@ -55,6 +55,136 @@ local function SetFontSafe(fontString, size, flags)
 end
 
 
+-- -------------------------------------------------
+-- Multi-theme progress bar system (NEW)
+-- -------------------------------------------------
+-- Users select a theme key in: ShortyRCDDB.ui.barTheme
+-- Keys: classic, smooth, striped, flat, dark
+-- Can be changed live with: /run ShortyRCDDB.ui.barTheme="smooth"; ShortyRCD.UI:ApplyBarTheme()
+
+UI.BarThemes = UI.BarThemes or {
+  classic = {
+    name = "Classic",
+    texture = "Interface/TargetingFrame/UI-StatusBar",
+    bgColor = {0.03, 0.03, 0.04, 0.85},
+    borderColor = {0.14, 0.15, 0.18, 1.0},
+    itemBGColor = {0.05, 0.06, 0.08, 0.55},
+    itemBorderColor = {0.12, 0.13, 0.16, 0.9},
+    spark = false,
+    gloss = false,
+    glowReady = false,
+  },
+  smooth = {
+    name = "Smooth (Raid)",
+    texture = "Interface/RaidFrame/Raid-Bar-Hp-Fill",
+    bgColor = {0.02, 0.02, 0.03, 0.90},
+    borderColor = {0.10, 0.11, 0.14, 1.0},
+    itemBGColor = {0.04, 0.05, 0.07, 0.52},
+    itemBorderColor = {0.10, 0.11, 0.14, 0.9},
+    spark = true,
+    gloss = true,
+    glowReady = true,
+  },
+  striped = {
+    name = "Striped (Skills)",
+    texture = "Interface/PaperDollInfoFrame/UI-Character-Skills-Bar",
+    bgColor = {0.02, 0.02, 0.03, 0.90},
+    borderColor = {0.12, 0.13, 0.16, 1.0},
+    itemBGColor = {0.04, 0.05, 0.07, 0.52},
+    itemBorderColor = {0.10, 0.11, 0.14, 0.9},
+    spark = true,
+    gloss = false,
+    glowReady = false,
+  },
+  flat = {
+    name = "Flat (Minimal)",
+    texture = "Interface/Buttons/WHITE8X8",
+    bgColor = {0.00, 0.00, 0.00, 0.85},
+    borderColor = {0.18, 0.19, 0.22, 1.0},
+    itemBGColor = {0.03, 0.04, 0.06, 0.50},
+    itemBorderColor = {0.14, 0.15, 0.18, 0.9},
+    spark = false,
+    gloss = false,
+    glowReady = false,
+  },
+  dark = {
+    name = "Dark Steel",
+    texture = "Interface/TargetingFrame/UI-StatusBar",
+    bgColor = {0.01, 0.01, 0.01, 0.92},
+    borderColor = {0.22, 0.22, 0.25, 1.0},
+    itemBGColor = {0.02, 0.02, 0.03, 0.65},
+    itemBorderColor = {0.20, 0.20, 0.23, 0.95},
+    spark = false,
+    gloss = true,
+    glowReady = true,
+  },
+}
+
+function UI:GetBarThemeKey()
+  ShortyRCDDB = ShortyRCDDB or {}
+  ShortyRCDDB.ui = ShortyRCDDB.ui or {}
+  if not ShortyRCDDB.ui.barTheme then
+    ShortyRCDDB.ui.barTheme = "classic"
+  end
+  return ShortyRCDDB.ui.barTheme
+end
+
+function UI:GetBarTheme()
+  local key = self:GetBarThemeKey()
+  local t = (self.BarThemes and self.BarThemes[key]) or nil
+  if not t then
+    t = (self.BarThemes and self.BarThemes.classic) or nil
+  end
+  return t
+end
+
+function UI:ApplyBarThemeToRow(r)
+  if not r then return end
+  local theme = self:GetBarTheme()
+  if not theme then return end
+
+  -- StatusBar texture
+  if r.bar and r.bar.SetStatusBarTexture and theme.texture then
+    r.bar:SetStatusBarTexture(theme.texture)
+  end
+
+  -- Item chrome (row bg + bar container)
+  if r.bg and r.bg.SetBackdropColor and theme.itemBGColor then
+    r.bg:SetBackdropColor(unpack(theme.itemBGColor))
+  end
+  if r.bg and r.bg.SetBackdropBorderColor and theme.itemBorderColor then
+    r.bg:SetBackdropBorderColor(unpack(theme.itemBorderColor))
+  end
+
+  if r.barBG and r.barBG.SetBackdropColor and theme.bgColor then
+    r.barBG:SetBackdropColor(unpack(theme.bgColor))
+  end
+  if r.barBG and r.barBG.SetBackdropBorderColor and theme.borderColor then
+    r.barBG:SetBackdropBorderColor(unpack(theme.borderColor))
+  end
+
+  -- Optional overlays
+  if r.spark then
+    if theme.spark then r.spark:Show() else r.spark:Hide() end
+  end
+  if r.gloss then
+    if theme.gloss then r.gloss:Show() else r.gloss:Hide() end
+  end
+  if r.readyGlow then
+    if theme.glowReady then r.readyGlow:Show() else r.readyGlow:Hide() end
+  end
+end
+
+function UI:ApplyBarTheme()
+  for _, r in ipairs(self.rows or {}) do
+    self:ApplyBarThemeToRow(r)
+  end
+  if self.UpdateBoard then
+    self:UpdateBoard()
+  end
+end
+
+
 
 -- Category order + display names
 local CATEGORY_ORDER = { "DEFENSIVE", "HEALING", "UTILITY" }
@@ -99,6 +229,11 @@ function UI:Init()
   self:ApplyLockState()
   self:RegisterRosterEvents()
   self:RefreshRoster()
+
+  -- Apply theme once the frame exists
+  if self.ApplyBarTheme then
+    self:ApplyBarTheme()
+  end
 
   self.accum = 0
   self.frame:SetScript("OnUpdate", function(_, elapsed)
@@ -368,6 +503,30 @@ function UI:EnsureRow(i)
   bar:SetMinMaxValues(0, 1)
   bar:SetValue(1)
 
+  -- Theme overlays (NEW): spark, gloss, ready glow
+  local spark = bar:CreateTexture(nil, "OVERLAY")
+  spark:SetTexture("Interface/Buttons/WHITE8X8")
+  spark:SetBlendMode("ADD")
+  spark:SetSize(18, 18)
+  spark:SetPoint("CENTER", bar, "LEFT", 0, 0)
+  spark:SetAlpha(0.55)
+  spark:Hide()
+
+  local gloss = bar:CreateTexture(nil, "OVERLAY")
+  gloss:SetTexture("Interface/Buttons/WHITE8X8")
+  gloss:SetBlendMode("ADD")
+  gloss:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+  gloss:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, -8)
+  gloss:SetAlpha(0.10)
+  gloss:Hide()
+
+  local readyGlow = barBG:CreateTexture(nil, "BORDER")
+  readyGlow:SetTexture("Interface/Buttons/WHITE8X8")
+  readyGlow:SetAllPoints(barBG)
+  readyGlow:SetBlendMode("ADD")
+  readyGlow:SetAlpha(0.06)
+  readyGlow:Hide()
+
   -- Timer text fixed width to prevent overlap
   local timer = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   timer:SetPoint("RIGHT", bar, "RIGHT", -5, 0)
@@ -397,6 +556,16 @@ function UI:EnsureRow(i)
   r.label = label
   r.timer = timer
   r.headerText = headerText
+
+  -- NEW theme fields
+  r.spark = spark
+  r.gloss = gloss
+  r.readyGlow = readyGlow
+
+  -- Apply current theme immediately (NEW)
+  if self.ApplyBarThemeToRow then
+    self:ApplyBarThemeToRow(r)
+  end
 
   self.rows[i] = r
   return r
@@ -870,6 +1039,11 @@ function UI:UpdateBoard()
         r.timer:Hide()
         r.bar:Hide()
 
+        -- NEW: ensure overlays are hidden on headers
+        if r.spark then r.spark:Hide() end
+        if r.gloss then r.gloss:Hide() end
+        if r.readyGlow then r.readyGlow:Hide() end
+
         r:Show()
         y = y + (ROW_H + 2) + GAP_Y
         rowIndex = rowIndex + 1
@@ -896,6 +1070,12 @@ function UI:UpdateBoard()
         else
           r.headerText:SetText("|cffffffff" .. classText .. "|r")
         end
+
+        -- NEW: ensure overlays are hidden on class headers
+        if r.spark then r.spark:Hide() end
+        if r.gloss then r.gloss:Hide() end
+        if r.readyGlow then r.readyGlow:Hide() end
+
         r:Show()
         y = y + (ROW_H - 4) + GAP_Y
         rowIndex = rowIndex + 1
@@ -938,6 +1118,11 @@ function UI:UpdateBoard()
         r.headerText:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
         r.headerText:SetText("|cffcfd8dc" .. label .. "|r")
 
+        -- NEW: ensure overlays are hidden on spell headers
+        if r.spark then r.spark:Hide() end
+        if r.gloss then r.gloss:Hide() end
+        if r.readyGlow then r.readyGlow:Hide() end
+
         r:Show()
         y = y + (ROW_H - 4) + GAP_Y
         rowIndex = rowIndex + 1
@@ -962,6 +1147,11 @@ function UI:UpdateBoard()
         r.bar:Show()
         r.label:Show()
         r.timer:Show()
+
+        -- NEW: re-apply theme on item rows in case theme was changed mid-session
+        if self.ApplyBarThemeToRow then
+          self:ApplyBarThemeToRow(r)
+        end
 
         local senderHex = RGBToHex(cr, cg, cb)
         local senderText = ("|cff%s%s|r"):format(senderHex, sender or "?")
@@ -1015,16 +1205,28 @@ function UI:UpdateBoard()
           r.bar:SetMinMaxValues(0, 1)
           r.bar:SetValue(progress)
 
+          -- NEW: move spark to bar edge to visually show progress (if enabled by theme)
+          if r.spark and r.spark:IsShown() then
+            local w = r.bar:GetWidth() or 0
+            local x = w * progress
+            r.spark:ClearAllPoints()
+            r.spark:SetPoint("CENTER", r.bar, "LEFT", x, 0)
+          end
+
           if isActive then
             r.bar:SetStatusBarColor(cr, cg, cb, 0.90)
             r.timer:SetText(FormatTime(remaining))
             r.timer:SetTextColor(0.90, 0.92, 0.96, 1.0)
             r.label:SetTextColor(0.90, 0.92, 0.96, 1.0)
+
+            if r.readyGlow then r.readyGlow:Hide() end
           else
             r.bar:SetStatusBarColor(cr * 0.30, cg * 0.30, cb * 0.30, 0.85)
             r.timer:SetText(FormatTime(remaining))
             r.timer:SetTextColor(0.92, 0.55, 0.55, 1.0) -- red-ish like raid addons
             r.label:SetTextColor(0.78, 0.80, 0.84, 1.0)
+
+            if r.readyGlow then r.readyGlow:Hide() end
           end
         else
           -- READY state: no progression needed; keep subtle bar & green READY
@@ -1034,6 +1236,24 @@ function UI:UpdateBoard()
           r.timer:SetText("READY")
           r.timer:SetTextColor(0.35, 0.90, 0.50, 1.0)
           r.label:SetTextColor(0.82, 0.84, 0.88, 1.0)
+
+          -- NEW: theme-based subtle READY glow (if enabled by theme)
+          if r.readyGlow then
+            local theme = self.GetBarTheme and self:GetBarTheme() or nil
+            if theme and theme.glowReady then
+              r.readyGlow:SetVertexColor(0.35, 0.90, 0.50, 1.0)
+              r.readyGlow:Show()
+            else
+              r.readyGlow:Hide()
+            end
+          end
+
+          -- NEW: spark sits at the end when READY (if enabled)
+          if r.spark and r.spark:IsShown() then
+            local w = r.bar:GetWidth() or 0
+            r.spark:ClearAllPoints()
+            r.spark:SetPoint("CENTER", r.bar, "LEFT", w, 0)
+          end
         end
 
         r:Show()

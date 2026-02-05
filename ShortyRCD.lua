@@ -491,11 +491,11 @@ do
       local cd = C_Spell.GetSpellCooldown(spellID)
       if cd then
         local duration = SafeToNumber(cd.duration)
-        -- 12.0+: CooldownInfo fields like startTime can be protected ("secret").
-        -- We only need duration; ready spells return 0 so this is safe.
-        if duration and duration > 0 then
-          return duration
-        end
+        local ok, gt = pcall(function() return duration and duration > 0 end)
+        if ok and gt then return duration end
+        -- 12.0+: CooldownInfo values may be protected ("secret"); pcall avoids compare errors.
+        -- If protected/unusable, we fall through to legacy API or base library values.
+        -- (no-op line to preserve file length)
       end
     end
 
